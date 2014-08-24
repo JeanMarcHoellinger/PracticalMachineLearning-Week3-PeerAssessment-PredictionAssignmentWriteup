@@ -1,0 +1,99 @@
+#Practical Machine Learning#
+##Prediction Assignment Write-up##
+**Jean-Marc Hoellinger**
+
+**Sunday, August 24, 2014**
+
+##Synopsis##
+Using devices such as _Jawbone Up_, _Nike FuelBand_, and _Fitbit_ it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how _much_ of a particular activity they do, but they rarely quantify _how well they do it_. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Data Processing##
+The following steps deal with files download and data load.
+```{r}
+library(data.table)
+# Training file download
+if (!file.exists("pml-training.csv")) {
+    download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
+                  destfile = "pml-training.csv", method="internal")
+}
+# Testing file download
+if (!file.exists("pml-testing.csv")) {
+    download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", 
+                  destfile = "pml-testing.csv", method="internal")
+}
+# Training data load
+train <- fread("pml-training.csv")
+# Testing data load
+test <- fread("pml-testing.csv")
+```
+The following steps deal with data exploration and transformation for analysis purpose.
+```{r results='hide'}
+# Show data structure of train, and first/last rows
+str(train, list.len=ncol(train))
+train
+# Columns not in common between test and train
+test.c <- which(names(test) %in% setdiff(names(test), names(train)))
+# Remove the first 7 columns from train having no predictive meaning
+set(train, j=1:7, value=NULL)
+# Transform all blank values from train into NA
+train[train == '',] <- NA
+# Remove from train all columns filled with more than 90% of NAs
+train <- train[, which(colSums(is.na(train)) < 0.9 * nrow(train)), with=FALSE]
+# Transform classe into factor for futher use in the formula of the predictive model
+train[, classe:=factor(classe)]
+# Keep the same columns in test than in train, add specific columns from test, preserving the original order
+test.c2 <- which(names(test) %in% intersect(names(train), names(test)))
+test <- test[, sort(c(test.c, test.c2)), with=FALSE]
+```
+
+The following steps deal with model training and cross-validation.
+
+##Prepare cross validation##
+```{r results='hide'}
+library(caret) # also load lattice and ggplot2 packages
+# Set random generation seed
+set.seed(123)
+# Create cross validation data set (40% of train)
+intrain  <- c(createDataPartition(y=train[, classe], p=0.6, list=FALSE))
+train2 <- train[intrain,]
+valid <- train[-intrain,]
+```
+
+##Model training##
+```{r}
+# Train the model using Random Forest method
+fitMod <- train(classe ~ ., data=as.data.frame(train2), method = "rf",
+                trControl = trainControl(method = "cv",  number = 4),
+                importance = TRUE)
+```
+
+##Cross validation and accuracy##
+```{r}
+# Model evaluation
+cm <- confusionMatrix(predict(fitMod, valid), valid[, classe])
+cm
+# Estimated out-of-sample error (1 - model accuracy)
+eoose <- 1 - cm$overall[1]
+```
+Overall accuracy of the model is `r cm$overall[1]*100`%
+So, estimated out-of-sample error is `r eoose*100`%
+
+##Predictions on the test##
+Here are the predictions on the test :
+```{r}
+predict(fitMod, test)
+```
+
+##References##
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har
+
+Thanks to the Human Activity Recognition publication and the Collaborators:
+* Wallace Ugulino
+* Eduardo Velloso
+* Hugo Fuks
